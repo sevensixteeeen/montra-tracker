@@ -14,7 +14,6 @@ from montra.auth import (
     set_pin,
     tries_left,
 )
-from montra.db import connect
 from montra.models import Expense
 from montra.repository import add_expense, list_expenses
 
@@ -60,17 +59,15 @@ def test_pin_itself_is_never_stored(conn):
     set_pin(conn, "4821")
 
     row = conn.execute("SELECT salt, hash FROM auth").fetchone()
-    assert b"4821" not in row["salt"] + row["hash"]
+    assert b"4821" not in bytes(row["salt"]) + bytes(row["hash"])
 
 
 def test_same_pin_gives_a_different_hash_each_time(conn):
-    other = connect(":memory:")
     set_pin(conn, "4821")
-    set_pin(other, "4821")
+    first = bytes(conn.execute("SELECT hash FROM auth").fetchone()["hash"])
+    set_pin(conn, "4821")
+    second = bytes(conn.execute("SELECT hash FROM auth").fetchone()["hash"])
 
-    first = conn.execute("SELECT hash FROM auth").fetchone()["hash"]
-    second = other.execute("SELECT hash FROM auth").fetchone()["hash"]
-    other.close()
     assert first != second
 
 
@@ -119,8 +116,8 @@ def test_lock_ends_after_the_waiting_time(conn):
     assert check_pin(conn, "4821", later) is True
 
 
-def test_reset_clears_the_pin_and_the_lock_but_keeps_expenses(conn):
-    saved = add_expense(conn, Expense(date(2026, 10, 13), 17500, "Food"))
+def test_reset_clears_the_pin_and_the_lock_but_keeps_expenses(conn, user_id):
+    saved = add_expense(conn, user_id, Expense(date(2026, 10, 13), 17500, "Food"))
     set_pin(conn, "4821")
     for _ in range(MAX_WRONG_TRIES):
         check_pin(conn, "0000", NOW)
@@ -129,7 +126,7 @@ def test_reset_clears_the_pin_and_the_lock_but_keeps_expenses(conn):
     assert reset_pin(conn) is False
     assert has_pin(conn) is False
     assert minutes_locked(conn, NOW) == 0
-    assert list_expenses(conn, 2026, 10) == [saved]
+    assert list_expenses(conn, user_id, 2026, 10) == [saved]
 
 
 def test_setting_a_new_pin_replaces_the_old_one(conn):

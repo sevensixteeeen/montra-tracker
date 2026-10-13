@@ -11,3 +11,7 @@ dist/
 
 # Local data (your real expenses stay off GitHub)
 data/
+
+# Secrets (passwords and keys must never be uploaded)
+.streamlit/secrets.toml
+.env

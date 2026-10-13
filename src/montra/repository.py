@@ -1,58 +1,85 @@
-"""Reads and writes expenses. The only module that contains SQL queries."""
+"""Reads and writes expenses. The only module that contains SQL queries.
 
-import sqlite3
+Every function that touches expenses takes the owner's `user_id` and only ever
+reads or changes that person's rows.
+"""
+
 from dataclasses import replace
 from datetime import date
+
+import psycopg
 
 from montra.models import Expense
 
 
-def _month_bounds(year: int, month: int) -> tuple[str, str]:
-    """First day of the month and first day of the next one, as ISO strings."""
+def _month_bounds(year: int, month: int) -> tuple[date, date]:
+    """First day of the month and first day of the next one."""
     start = date(year, month, 1)
     end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return start.isoformat(), end.isoformat()
+    return start, end
 
 
-def _to_expense(row: sqlite3.Row) -> Expense:
+def _to_expense(row: dict) -> Expense:
     return Expense(
         id=row["id"],
-        spent_on=date.fromisoformat(row["spent_on"]),
+        spent_on=row["spent_on"],
         amount_minor=row["amount_minor"],
         category=row["category"],
         note=row["note"],
     )
 
 
-def add_expense(conn: sqlite3.Connection, expense: Expense) -> Expense:
-    """Save an expense and return it with its new id."""
-    with conn:
-        cursor = conn.execute(
-            "INSERT INTO expenses (spent_on, amount_minor, category, note)"
-            " VALUES (?, ?, ?, ?)",
-            (
-                expense.spent_on.isoformat(),
-                expense.amount_minor,
-                expense.category,
-                expense.note,
-            ),
-        )
-    return replace(expense, id=cursor.lastrowid)
+def ensure_owner(conn: psycopg.Connection) -> int:
+    """Id of the person this copy of the app belongs to, created on first use.
+
+    Until people sign in with their own accounts there is exactly one person.
+    """
+    with conn.transaction():
+        row = conn.execute("SELECT MIN(id) AS id FROM users").fetchone()
+        if row["id"] is not None:
+            return row["id"]
+        row = conn.execute(
+            "INSERT INTO users (name) VALUES ('') RETURNING id"
+        ).fetchone()
+        return row["id"]
 
 
-def list_expenses(conn: sqlite3.Connection, year: int, month: int) -> list[Expense]:
-    """All expenses in the given month, newest first."""
+def add_expense(conn: psycopg.Connection, user_id: int, expense: Expense) -> Expense:
+    """Save an expense for this person and return it with its new id."""
+    row = conn.execute(
+        "INSERT INTO expenses (user_id, spent_on, amount_minor, category, note)"
+        " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (
+            user_id,
+            expense.spent_on,
+            expense.amount_minor,
+            expense.category,
+            expense.note,
+        ),
+    ).fetchone()
+    return replace(expense, id=row["id"])
+
+
+def list_expenses(
+    conn: psycopg.Connection, user_id: int, year: int, month: int
+) -> list[Expense]:
+    """This person's expenses in the given month, newest first."""
     rows = conn.execute(
         "SELECT id, spent_on, amount_minor, category, note FROM expenses"
-        " WHERE spent_on >= ? AND spent_on < ?"
+        " WHERE user_id = %s AND spent_on >= %s AND spent_on < %s"
         " ORDER BY spent_on DESC, id DESC",
-        _month_bounds(year, month),
+        (user_id, *_month_bounds(year, month)),
     ).fetchall()
     return [_to_expense(row) for row in rows]
 
 
-def delete_expense(conn: sqlite3.Connection, expense_id: int) -> bool:
-    """Delete an expense. Returns False if there was no such id."""
-    with conn:
-        cursor = conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+def delete_expense(conn: psycopg.Connection, user_id: int, expense_id: int) -> bool:
+    """Delete one of this person's expenses.
+
+    Returns False if there is no such expense, or it belongs to someone else.
+    """
+    cursor = conn.execute(
+        "DELETE FROM expenses WHERE id = %s AND user_id = %s",
+        (expense_id, user_id),
+    )
     return cursor.rowcount > 0

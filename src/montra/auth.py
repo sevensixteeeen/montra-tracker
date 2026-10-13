@@ -11,10 +11,11 @@ import hashlib
 import hmac
 import math
 import secrets
-import sqlite3
 import sys
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
+
+import psycopg
 
 from montra.db import connect
 
@@ -36,14 +37,13 @@ def _hash(pin: str, salt: bytes, n: int, r: int, p: int) -> bytes:
     )
 
 
-def _locked_until(conn: sqlite3.Connection, now: datetime) -> datetime | None:
+def _locked_until(conn: psycopg.Connection, now: datetime) -> datetime | None:
     row = conn.execute(
         "SELECT locked_until FROM login_attempts WHERE id = 1"
     ).fetchone()
     if row is None or row["locked_until"] is None:
         return None
-    end = datetime.fromisoformat(row["locked_until"])
-    return end if end > now else None
+    return row["locked_until"] if row["locked_until"] > now else None
 
 
 def is_valid_pin(pin: str) -> bool:
@@ -51,39 +51,39 @@ def is_valid_pin(pin: str) -> bool:
     return len(pin) == PIN_LENGTH and pin.isascii() and pin.isdigit()
 
 
-def has_pin(conn: sqlite3.Connection) -> bool:
+def has_pin(conn: psycopg.Connection) -> bool:
     return conn.execute("SELECT 1 FROM auth WHERE id = 1").fetchone() is not None
 
 
-def set_pin(conn: sqlite3.Connection, pin: str) -> None:
+def set_pin(conn: psycopg.Connection, pin: str) -> None:
     """Save a new PIN, replacing any existing one and clearing any lock."""
     if not is_valid_pin(pin):
         raise ValueError(f"The PIN must be exactly {PIN_LENGTH} digits.")
     salt = secrets.token_bytes(16)
     digest = _hash(pin, salt, SCRYPT_N, SCRYPT_R, SCRYPT_P)
-    with conn:
+    with conn.transaction():
+        conn.execute("DELETE FROM auth")
         conn.execute(
-            "INSERT OR REPLACE INTO auth (id, salt, hash, n, r, p)"
-            " VALUES (1, ?, ?, ?, ?, ?)",
+            "INSERT INTO auth (id, salt, hash, n, r, p) VALUES (1, %s, %s, %s, %s, %s)",
             (salt, digest, SCRYPT_N, SCRYPT_R, SCRYPT_P),
         )
         conn.execute("DELETE FROM login_attempts")
 
 
-def tries_left(conn: sqlite3.Connection) -> int:
+def tries_left(conn: psycopg.Connection) -> int:
     """How many more wrong PINs are allowed before the app locks."""
     row = conn.execute("SELECT failed FROM login_attempts WHERE id = 1").fetchone()
     return MAX_WRONG_TRIES - (row["failed"] if row else 0)
 
 
-def minutes_locked(conn: sqlite3.Connection, now: datetime | None = None) -> int:
+def minutes_locked(conn: psycopg.Connection, now: datetime | None = None) -> int:
     """Minutes until the lock ends, rounded up. 0 means the app is not locked."""
     now = now or datetime.now(UTC)
     end = _locked_until(conn, now)
     return math.ceil((end - now).total_seconds() / 60) if end else 0
 
 
-def check_pin(conn: sqlite3.Connection, pin: str, now: datetime | None = None) -> bool:
+def check_pin(conn: psycopg.Connection, pin: str, now: datetime | None = None) -> bool:
     """True only if a PIN is set, the app is not locked, and this is the PIN.
 
     Each wrong PIN is counted, and MAX_WRONG_TRIES in a row lock the app for
@@ -97,29 +97,28 @@ def check_pin(conn: sqlite3.Connection, pin: str, now: datetime | None = None) -
     if row is None:
         return False
 
-    attempt = _hash(pin, row["salt"], row["n"], row["r"], row["p"])
-    correct = hmac.compare_digest(attempt, row["hash"])
-    with conn:
-        if correct:
-            conn.execute("DELETE FROM login_attempts")
-        else:
-            failed = MAX_WRONG_TRIES - tries_left(conn) + 1
+    attempt = _hash(pin, bytes(row["salt"]), row["n"], row["r"], row["p"])
+    correct = hmac.compare_digest(attempt, bytes(row["hash"]))
+    with conn.transaction():
+        failed = MAX_WRONG_TRIES - tries_left(conn) + 1
+        conn.execute("DELETE FROM login_attempts")
+        if not correct:
             lock_end = None
             if failed >= MAX_WRONG_TRIES:
                 # Start the lock, and a fresh count for when it ends.
                 failed = 0
-                lock_end = (now + timedelta(minutes=LOCK_MINUTES)).isoformat()
+                lock_end = now + timedelta(minutes=LOCK_MINUTES)
             conn.execute(
-                "INSERT OR REPLACE INTO login_attempts (id, failed, locked_until)"
-                " VALUES (1, ?, ?)",
+                "INSERT INTO login_attempts (id, failed, locked_until)"
+                " VALUES (1, %s, %s)",
                 (failed, lock_end),
             )
     return correct
 
 
-def reset_pin(conn: sqlite3.Connection) -> bool:
+def reset_pin(conn: psycopg.Connection) -> bool:
     """Remove the saved PIN and any lock. Returns False if there was no PIN."""
-    with conn:
+    with conn.transaction():
         cursor = conn.execute("DELETE FROM auth")
         conn.execute("DELETE FROM login_attempts")
     return cursor.rowcount > 0
