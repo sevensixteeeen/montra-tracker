@@ -1,0 +1,26 @@
+# Montra's look: colours, fonts and corner rounding.
+# Streamlit reads this file automatically when the app starts.
+
+[theme]
+base = "dark"
+primaryColor = "#C8F250"
+backgroundColor = "#0E1014"
+secondaryBackgroundColor = "#171B22"
+textColor = "#F1F3F6"
+borderColor = "#272D38"
+baseRadius = "0.75rem"
+showWidgetBorder = true
+
+# Both fonts are downloaded from Google when the page loads. Without an
+# internet connection the app falls back to the computer's own sans-serif font.
+font = "Figtree:https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Bricolage Grotesque:https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&display=swap, sans-serif"
+headingFontWeights = 700
+
+[theme.sidebar]
+backgroundColor = "#13161C"
+secondaryBackgroundColor = "#0E1014"
+
+[client]
+# Hide Streamlit's "Deploy" button, which this personal app does not use.
+toolbarMode = "minimal"
