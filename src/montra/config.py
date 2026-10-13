@@ -20,6 +20,7 @@ CATEGORIES = [
     "Shopping",
     "Health",
     "Entertainment",
+    "Subscription",
     "Other",
 ]
 
