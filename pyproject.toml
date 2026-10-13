@@ -28,3 +28,7 @@ testpaths = ["tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# app.py adds src/ to the import path before importing the project's own code.
+"app.py" = ["E402"]

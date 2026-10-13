@@ -31,6 +31,16 @@ DATABASE_URL = "postgresql://..."
 That address contains the database password. The file is listed in `.gitignore`
 and must never be uploaded or shared.
 
+## Hosting
+
+The online copy runs on Streamlit Community Cloud, published from this GitHub
+repository (`app.py` on the `main` branch, Python 3.12). Its `DATABASE_URL` is
+pasted into the app's **Secrets** box in the hosting settings, never into the
+repository. Every push to `main` updates the online copy.
+
+Started with `start-montra.bat`, the app answers only on this computer. Started
+from a terminal, it can also be reached from other devices on the same network.
+
 ## Login
 
 The first time the app opens it asks you to create a 4-digit PIN. After that it

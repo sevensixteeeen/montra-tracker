@@ -1,11 +1,19 @@
 """Streamlit UI. Run with: uv run streamlit run app.py"""
 
+import os
+import sys
 import time
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 
 import psycopg
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
+
+# A host may install only the libraries and not this project itself, so make
+# sure the code in src/ can be imported either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from montra.auth import (
     PIN_LENGTH,
@@ -16,7 +24,7 @@ from montra.auth import (
     set_pin,
     tries_left,
 )
-from montra.config import CATEGORIES, CURRENCY_SYMBOL
+from montra.config import CATEGORIES, CURRENCY_SYMBOL, TIMEZONE
 from montra.db import connect, create_tables
 from montra.models import Expense
 from montra.money import format_money, to_minor
@@ -41,7 +49,15 @@ st.html(
     "</style>"
 )
 
-today = date.today()
+# The hosting service hands private settings to the app through st.secrets
+# rather than a file in this folder, so pass the database address on from there.
+if not os.environ.get("DATABASE_URL"):
+    try:
+        os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
+    except (KeyError, StreamlitSecretNotFoundError):
+        pass  # montra.config then looks in the local file, or explains what is missing
+
+today = datetime.now(TIMEZONE).date()
 state = st.session_state
 state.setdefault("view_month", (today.year, today.month))
 

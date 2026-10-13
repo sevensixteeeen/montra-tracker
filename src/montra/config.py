@@ -3,6 +3,7 @@
 import os
 import tomllib
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,6 +11,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SECRETS_FILE = PROJECT_ROOT / ".streamlit" / "secrets.toml"
 
 CURRENCY_SYMBOL = "₹"
+
+# "Today" and "this month" follow this clock, wherever the app is hosted.
+TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 CATEGORIES = [
     "Food",
