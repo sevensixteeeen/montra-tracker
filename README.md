@@ -4,6 +4,11 @@ Personal monthly expense tracker. Python, SQLite and Streamlit, managed with uv.
 
 ## Run
 
+On Windows, double-click `start-montra.bat` (or a shortcut to it). It starts the
+app for this computer only and opens it in the browser. Close its window to stop.
+
+From a terminal:
+
 ```powershell
 uv run streamlit run app.py   # open the app in the browser
 uv run pytest                 # run the tests
