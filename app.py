@@ -1,10 +1,20 @@
 """Streamlit UI. Run with: uv run streamlit run app.py"""
 
+import time
 from contextlib import closing
 from datetime import date
 
 import streamlit as st
 
+from montra.auth import (
+    PIN_LENGTH,
+    check_pin,
+    has_pin,
+    is_valid_pin,
+    minutes_locked,
+    set_pin,
+    tries_left,
+)
 from montra.config import CATEGORIES, CURRENCY_SYMBOL
 from montra.db import connect
 from montra.models import Expense
@@ -29,9 +39,73 @@ today = date.today()
 state = st.session_state
 state.setdefault("view_month", (today.year, today.month))
 
-# A message saved just before the page reloads (see confirm_delete).
-if "flash" in state:
-    st.toast(state.pop("flash"), icon=":material/check_circle:")
+
+def require_login() -> None:
+    """Show the login screen, and nothing else, until the PIN is given."""
+    if state.get("logged_in"):
+        return
+
+    with closing(connect()) as conn:
+        pin_exists = has_pin(conn)
+        wait = minutes_locked(conn)
+
+    _, middle, _ = st.columns([1, 2, 1])
+    with middle:
+        st.title("Montra", anchor=False)
+        if not pin_exists:
+            with st.form("create_pin"):
+                st.subheader("Create your PIN", anchor=False)
+                st.caption(
+                    f"Exactly {PIN_LENGTH} digits. You will need it every time"
+                    " you open Montra."
+                )
+                pin = st.text_input("PIN", type="password", max_chars=PIN_LENGTH)
+                repeat = st.text_input(
+                    "Type it again", type="password", max_chars=PIN_LENGTH
+                )
+                submitted = st.form_submit_button(
+                    "Save PIN", type="primary", width="stretch"
+                )
+            if submitted:
+                if not is_valid_pin(pin):
+                    st.error(f"Use exactly {PIN_LENGTH} digits.")
+                elif pin != repeat:
+                    st.error("The two PINs do not match.")
+                else:
+                    with closing(connect()) as conn:
+                        # Never overwrite a PIN that was saved meanwhile.
+                        if not has_pin(conn):
+                            set_pin(conn, pin)
+                            state.logged_in = True
+                    st.rerun()
+        elif wait:
+            minutes = "1 minute" if wait == 1 else f"{wait} minutes"
+            st.error(f"Too many wrong PINs. Montra is locked for {minutes}.")
+            st.button("Try again")
+        else:
+            with st.form("login"):
+                st.subheader("Enter your PIN", anchor=False)
+                pin = st.text_input("PIN", type="password", max_chars=PIN_LENGTH)
+                submitted = st.form_submit_button(
+                    "Log in", type="primary", width="stretch"
+                )
+            if submitted:
+                if not is_valid_pin(pin):
+                    st.error(f"Enter your {PIN_LENGTH}-digit PIN.")
+                else:
+                    with closing(connect()) as conn:
+                        correct = check_pin(conn, pin)
+                        left = tries_left(conn)
+                        locked = minutes_locked(conn) > 0
+                    if correct:
+                        state.logged_in = True
+                        st.rerun()
+                    time.sleep(1)  # a short pause slows down PIN guessing
+                    if locked:
+                        st.rerun()  # shows the "locked" message above
+                    tries = "1 try" if left == 1 else f"{left} tries"
+                    st.error(f"That PIN is not right. {tries} left.")
+    st.stop()
 
 
 def shift_month(step: int) -> None:
@@ -63,6 +137,13 @@ def confirm_delete(expense: Expense) -> None:
         )
         st.rerun()
 
+
+# Everything below this line is only reached after a successful login.
+require_login()
+
+# A message saved just before the page reloads (see confirm_delete).
+if "flash" in state:
+    st.toast(state.pop("flash"), icon=":material/check_circle:")
 
 with st.sidebar:
     st.title("Montra", anchor=False)
@@ -102,6 +183,11 @@ with st.sidebar:
                 f"Added {format_money(amount_minor)} · {category}",
                 icon=":material/check_circle:",
             )
+
+    st.divider()
+    if st.button("Log out", icon=":material/logout:", width="stretch"):
+        state.clear()
+        st.rerun()
 
 year, month = state.view_month
 with closing(connect()) as conn:

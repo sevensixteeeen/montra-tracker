@@ -24,3 +24,8 @@ secondaryBackgroundColor = "#0E1014"
 [client]
 # Hide Streamlit's "Deploy" button, which this personal app does not use.
 toolbarMode = "minimal"
+
+[server]
+# Only this computer can open the app. The login password travels unencrypted
+# between browser and app, which is safe here but not across a network.
+address = "localhost"

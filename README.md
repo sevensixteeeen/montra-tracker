@@ -16,6 +16,25 @@ uv run ruff check             # lint
 uv run ruff format            # format
 ```
 
+## Login
+
+The first time the app opens it asks you to create a 4-digit PIN. After that it
+shows a PIN screen before anything else. Refreshing the page or opening a new
+tab asks for the PIN again.
+
+Five wrong PINs in a row lock the app for 5 minutes. While it is locked even the
+right PIN is refused.
+
+Forgot the PIN, or locked out? This clears the PIN and the lock and keeps your
+expenses, so the app asks you to create a new PIN:
+
+```powershell
+uv run python -m montra.auth reset
+```
+
+Only a one-way hash of the PIN is stored, in `data/expenses.db`. The PIN
+protects the app screen; it does not encrypt that database file.
+
 ## Structure
 
 ```
@@ -26,6 +45,7 @@ src/montra/
     models.py              Expense dataclass
     money.py               rupees <-> paise conversion and formatting
     db.py                  SQLite connection and table schema
+    auth.py                login PIN: hashing, checking, lockout, reset command
     repository.py          add / list / delete expenses (all SQL lives here)
     services.py            monthly totals and per-category breakdown
 tests/                     pytest tests, run against an in-memory database

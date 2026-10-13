@@ -15,6 +15,23 @@ CREATE TABLE IF NOT EXISTS expenses (
     created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_spent_on ON expenses (spent_on);
+
+-- The login PIN, stored only as a salted hash (see auth.py).
+CREATE TABLE IF NOT EXISTS auth (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),             -- only ever one row
+    salt BLOB    NOT NULL,
+    hash BLOB    NOT NULL,
+    n    INTEGER NOT NULL,                               -- scrypt cost settings
+    r    INTEGER NOT NULL,
+    p    INTEGER NOT NULL
+);
+
+-- Wrong PIN tries, so the app can lock itself after too many (see auth.py).
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),     -- only ever one row
+    failed       INTEGER NOT NULL DEFAULT 0,             -- wrong tries in a row
+    locked_until TEXT                                    -- ISO time, or NULL
+);
 """
 
 
